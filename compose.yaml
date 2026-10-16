@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${DB_NAME:-loan_compliance}
+      POSTGRES_USER: ${DB_USER:-loan_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password}
+
+    ports:
+      - "${DB_PORT:-5433}:5432"
+
+    volumes:
+      - loan_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  loan_data:
