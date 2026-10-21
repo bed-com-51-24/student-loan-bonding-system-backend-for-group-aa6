@@ -44,6 +44,7 @@ public class SecurityConfig {
                                 "/api/auth/reset-password"
                         ).permitAll()
                         .requestMatchers("/error").permitAll()
+                        .requestMatchers("/actuator/health/**").permitAll()
                         .requestMatchers(
                                 org.springframework.http.HttpMethod.OPTIONS, "/**"
                         ).permitAll()
