@@ -37,6 +37,12 @@ management:
     web:
       exposure:
         include: health
+  health:
+    mail:
+      enabled: false
+  endpoint:
+    health:
+      show-details: always
 
 app:
   jwt:
