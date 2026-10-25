@@ -1,3 +1,4 @@
+
 -- ============================================================
 -- V1: INITIAL DATABASE SCHEMA
 -- Student Loan Compliance and Monitoring System
