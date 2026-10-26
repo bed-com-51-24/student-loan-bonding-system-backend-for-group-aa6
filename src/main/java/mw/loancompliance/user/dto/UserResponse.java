@@ -11,6 +11,7 @@ public record UserResponse(
         String accountStatus,
         Long organizationId,
         Instant emailVerifiedAt,
+        Instant lastLoginAt,
         Instant createdAt,
         Instant updatedAt
 ) {
