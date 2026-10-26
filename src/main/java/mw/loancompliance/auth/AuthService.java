@@ -32,11 +32,8 @@ public class AuthService {
     private final PasswordResetTokenRepository resetRepository;
     private final JavaMailSender mailSender;
 
-    @Value("${spring.mail.username:}")
+    @Value("${app.mail-from:no-reply@example.com}")
     private String mailFrom;
-
-    @Value("${app.frontend.base-url:http://localhost:3000}")
-    private String frontendUrl;
 
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -112,12 +109,13 @@ public class AuthService {
 
         User user = token.getUser();
 
-        if ("DISABLED".equals(user.getAccountStatus())) {
+        if (!"PENDING_ACTIVATION".equals(user.getAccountStatus())) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
-                    "This account is disabled");
+                    "This account is not awaiting activation");
         }
 
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setAccountStatus("ACTIVE");
         user.setEmailVerifiedAt(Instant.now());
         token.setUsedAt(Instant.now());
@@ -143,11 +141,10 @@ public class AuthService {
                     sendEmail(
                             user.getEmail(),
                             "Password reset",
-                            "Use this link to reset your password:\n\n"
-                                    + frontendUrl
-                                    + "/reset-password?token="
+                            "Your password reset token is:\n\n"
                                     + rawToken
-                                    + "\n\nThis link expires in 30 minutes.");
+                                    + "\n\nSubmit this token and your new password to POST /api/auth/reset-password."
+                                    + " The token expires in 30 minutes and can only be used once.");
                 });
 
         return new MessageResponse(
@@ -198,11 +195,10 @@ public class AuthService {
         sendEmail(
                 user.getEmail(),
                 "Activate your account",
-                "Activate your account using this link:\n\n"
-                        + frontendUrl
-                        + "/activate?token="
+                "Your account activation token is:\n\n"
                         + rawToken
-                        + "\n\nThis link expires in 24 hours.");
+                        + "\n\nSubmit this token and your chosen password to POST /api/auth/activate."
+                        + " The token expires in 24 hours and can only be used once.");
     }
 
     private String generateToken() {
