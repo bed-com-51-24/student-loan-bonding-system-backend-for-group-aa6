@@ -62,17 +62,21 @@ public class AuthService {
                         HttpStatus.UNAUTHORIZED,
                         "Invalid email or password"));
 
-        if (!passwordEncoder.matches(
-                request.password(), user.getPasswordHash())) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Invalid email or password");
-        }
-
         if (!"ACTIVE".equals(user.getAccountStatus())) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
                     "Your account is not active");
+        }
+
+        // Pending accounts may not have a password hash yet. Check the
+        // account status first, and guard against a missing hash in case
+        // another invalid/incomplete account reaches this point.
+        String passwordHash = user.getPasswordHash();
+        if (passwordHash == null || passwordHash.isBlank()
+                || !passwordEncoder.matches(request.password(), passwordHash)) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid email or password");
         }
 
         user.setLastLoginAt(Instant.now());
