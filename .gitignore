@@ -46,3 +46,4 @@ build/
 Thumbs.db
 /local/
 AGENTS.md
+seed.sql
