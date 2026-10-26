@@ -36,7 +36,12 @@ public class SecurityConfig {
                                 "/api/auth/forgot-password",
                                 "/api/auth/reset-password"
                         ).permitAll()
-                        .requestMatchers("/error").permitAll()
+                        .requestMatchers(
+                                "/error",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**"
+                        ).permitAll()
                         .requestMatchers(
                                 org.springframework.http.HttpMethod.OPTIONS, "/**"
                         ).permitAll()
