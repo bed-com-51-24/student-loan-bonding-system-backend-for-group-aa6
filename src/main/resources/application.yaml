@@ -18,16 +18,17 @@ spring:
     locations: classpath:db/migration
 
   mail:
-    host: ${MAIL_HOST:localhost}
+    host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:}
     password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
-          auth: true
+          auth: ${MAIL_SMTP_AUTH:true}
           starttls:
-            enable: true
+            enable: ${MAIL_SMTP_STARTTLS_ENABLE:true}
+            required: ${MAIL_SMTP_STARTTLS_REQUIRED:true}
 
 server:
   port: ${SERVER_PORT:8080}
@@ -37,6 +38,12 @@ management:
     web:
       exposure:
         include: health
+  health:
+    mail:
+      enabled: false
+  endpoint:
+    health:
+      show-details: always
 
 app:
   jwt:
