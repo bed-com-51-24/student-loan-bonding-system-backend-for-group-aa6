@@ -1,7 +1,7 @@
 # Environment variables and secrets
 .env
 .env.*
-!.env.example
+.env.example
 
 # Local development data
 /local/
@@ -44,3 +44,5 @@ build/
 # OS files
 .DS_Store
 Thumbs.db
+/local/
+AGENTS.md

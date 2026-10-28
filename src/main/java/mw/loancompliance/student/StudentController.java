@@ -1,9 +1,13 @@
 package mw.loancompliance.student;
 
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import java.util.NoSuchElementException;
 import mw.loancompliance.student.dto.CreateStudentRequest;
 import mw.loancompliance.student.dto.StudentResponse;
 import mw.loancompliance.student.dto.UpdateStudentRequest;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -11,6 +15,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/students")
+@SecurityRequirement(name = "bearerAuth")
 public class StudentController {
 
     private final StudentService studentService;
@@ -76,5 +81,19 @@ public class StudentController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteStudent(@PathVariable Long id) {
         studentService.deleteStudent(id);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public java.util.Map<String, String> handleIllegalArgument(
+            IllegalArgumentException exception) {
+        return java.util.Map.of("error", exception.getMessage());
+    }
+
+    @ExceptionHandler(NoSuchElementException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public java.util.Map<String, String> handleNotFound(
+            NoSuchElementException exception) {
+        return java.util.Map.of("error", exception.getMessage());
     }
 }
