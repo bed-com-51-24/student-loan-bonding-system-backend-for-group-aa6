@@ -147,8 +147,13 @@ public class UserService {
                     "User details are required");
         }
 
+        // Normalize whitespace before validating so user input such as
+        // " person@example.com " is handled consistently with the value saved.
+        CreatePendingUserCommand normalizedCommand = new CreatePendingUserCommand(
+                command.fullName() == null ? null : command.fullName().trim(),
+                command.email() == null ? null : command.email().trim());
         Set<ConstraintViolation<CreatePendingUserCommand>> violations =
-                validator.validate(command);
+                validator.validate(normalizedCommand);
         if (!violations.isEmpty()) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
