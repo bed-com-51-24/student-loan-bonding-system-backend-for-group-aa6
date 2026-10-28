@@ -67,6 +67,13 @@
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
 
+        <!-- OpenAPI documentation and Swagger UI -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>3.2.0</version>
+        </dependency>
+
         <!-- PostgreSQL migration support -->
         <dependency>
             <groupId>org.flywaydb</groupId>
