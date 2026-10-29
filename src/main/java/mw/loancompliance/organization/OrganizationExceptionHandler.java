@@ -8,6 +8,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 import java.util.TreeMap;
@@ -24,6 +26,17 @@ public class OrganizationExceptionHandler {
     @ExceptionHandler(EntityNotFoundException.class)
     public ResponseEntity<ApiError> handleEntityNotFound(EntityNotFoundException exception) {
         return error(HttpStatus.NOT_FOUND, "Organization not found.");
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException exception) {
+        return error(HttpStatus.FORBIDDEN, "You are not allowed to access this organization resource.");
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiError> handleUserWorkflowError(ResponseStatusException exception) {
+        HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
+        return error(status, exception.getReason() == null ? "User onboarding failed." : exception.getReason());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
