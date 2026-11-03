@@ -18,14 +18,16 @@ public class User {
     @Column(nullable = false, length = 255)
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 255)
+    @Column(name = "password_hash", nullable = true, length = 255)
     private String passwordHash;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
-    private String role;
+    private UserRole role;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "account_status", nullable = false, length = 30)
-    private String accountStatus;
+    private UserAccountStatus accountStatus;
 
     @Column(name = "organization_id")
     private Long organizationId;
@@ -75,19 +77,21 @@ public class User {
     }
 
     public String getRole() {
-        return role;
+        return role == null ? null : role.name();
     }
 
     public void setRole(String role) {
-        this.role = role;
+        this.role = role == null ? null : UserRole.valueOf(role);
     }
 
     public String getAccountStatus() {
-        return accountStatus;
+        return accountStatus == null ? null : accountStatus.name();
     }
 
     public void setAccountStatus(String accountStatus) {
-        this.accountStatus = accountStatus;
+        this.accountStatus = accountStatus == null
+                ? null
+                : UserAccountStatus.valueOf(accountStatus);
     }
 
     public Long getOrganizationId() {
