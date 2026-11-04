@@ -2,16 +2,16 @@ package mw.loancompliance.student;
 
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import mw.loancompliance.student.dto.CreateStudentRequest;
 import mw.loancompliance.student.dto.StudentResponse;
 import mw.loancompliance.student.dto.UpdateStudentRequest;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/students")
@@ -30,7 +30,8 @@ public class StudentController {
             @Valid @RequestBody CreateStudentRequest request) {
 
         Student student = studentService.createStudent(
-                request.userId(),
+                request.fullName(),
+                request.email(),
                 request.studentNumber(),
                 request.university(),
                 request.program(),
@@ -38,6 +39,14 @@ public class StudentController {
         );
 
         return StudentResponse.from(student);
+    }
+
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('STUDENT')")
+    public StudentResponse getMyProfile(Authentication authentication) {
+        return StudentResponse.from(
+                studentService.getStudentByEmail(authentication.getName())
+        );
     }
 
     @GetMapping
@@ -85,15 +94,15 @@ public class StudentController {
 
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public java.util.Map<String, String> handleIllegalArgument(
+    public Map<String, String> handleIllegalArgument(
             IllegalArgumentException exception) {
-        return java.util.Map.of("error", exception.getMessage());
+        return Map.of("error", exception.getMessage());
     }
 
     @ExceptionHandler(NoSuchElementException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
-    public java.util.Map<String, String> handleNotFound(
+    public Map<String, String> handleNotFound(
             NoSuchElementException exception) {
-        return java.util.Map.of("error", exception.getMessage());
+        return Map.of("error", exception.getMessage());
     }
 }
