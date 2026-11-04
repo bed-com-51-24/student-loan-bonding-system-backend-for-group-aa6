@@ -8,6 +8,8 @@ import java.time.LocalDate;
 public record StudentResponse(
         Long id,
         Long userId,
+        String fullName,
+        String email,
         String studentNumber,
         String university,
         String program,
@@ -20,6 +22,8 @@ public record StudentResponse(
         return new StudentResponse(
                 student.getId(),
                 student.getUser().getId(),
+                student.getUser().getFullName(),
+                student.getUser().getEmail(),
                 student.getStudentNumber(),
                 student.getUniversity(),
                 student.getProgram(),
