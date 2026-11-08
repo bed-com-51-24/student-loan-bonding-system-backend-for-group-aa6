@@ -1,15 +1,25 @@
-
 package mw.loancompliance.user.controller;
 
-import mw.loancompliance.user.dto.UpdateUserRequest;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
+import mw.loancompliance.user.dto.UpdateUserStatusRequest;
 import mw.loancompliance.user.dto.UserResponse;
 import mw.loancompliance.user.service.UserService;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/users")
+@PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
+@SecurityRequirement(name = "bearerAuth")
 public class UserController {
 
     private final UserService userService;
@@ -24,13 +34,14 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
-    public UserResponse getUserById(@PathVariable Long id) {
+    public UserResponse getUserById(@PathVariable @Positive Long id) {
         return userService.getUserById(id);
     }
-    @PutMapping("/{id}")
-public UserResponse updateUser(
-        @PathVariable Long id,
-        @jakarta.validation.Valid @RequestBody UpdateUserRequest request) {
-    return userService.updateUser(id, request);
-}
+
+    @PatchMapping("/{id}/status")
+    public UserResponse updateUserStatus(
+            @PathVariable @Positive Long id,
+            @Valid @RequestBody UpdateUserStatusRequest request) {
+        return userService.updateUserStatus(id, request);
+    }
 }
