@@ -5,7 +5,7 @@ spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:loan_compliance}
     username: ${DB_USER:loan_user}
-    password: ${DB_PASSWORD:dev_password}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -46,6 +46,9 @@ management:
       show-details: always
 
 app:
+  payment:
+    bank-name: ${PAYMENT_BANK_NAME:}
+    bank-account-number: ${PAYMENT_BANK_ACCOUNT_NUMBER:}
   jwt:
     secret: ${JWT_SECRET}
     expiration-ms: ${JWT_EXPIRATION_MS:900000}
