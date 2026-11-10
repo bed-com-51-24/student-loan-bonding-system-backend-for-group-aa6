@@ -1,6 +1,10 @@
 package mw.loancompliance.loan.dto;
 
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import mw.loancompliance.loan.LoanStatus;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -9,5 +13,7 @@ public record UpdateLoanAccountRequest(
         @DecimalMin("0.00") @Digits(integer = 12, fraction = 2) BigDecimal principalAmount,
         @DecimalMin("0.00") @Digits(integer = 12, fraction = 2) BigDecimal outstandingBalance,
         LocalDate disbursementDate,
-        @Pattern(regexp = "ACTIVE|PAID|SUSPENDED") String loanStatus
+        LocalDate repaymentStartDate,
+        @DecimalMin("0.01") @Digits(integer = 12, fraction = 2) BigDecimal monthlyInstallment,
+        LoanStatus loanStatus
 ) {}

@@ -7,8 +7,12 @@ import mw.loancompliance.student.StudentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Locale;
+import java.util.UUID;
 
 @Service
 @Transactional(readOnly = true)
@@ -26,7 +30,7 @@ public class LoanAccountService {
         Student student = studentRepository.findById(request.studentId())
                 .orElseThrow(() -> new NoSuchElementException("Student not found with ID: " + request.studentId()));
         if (loanRepository.existsByStudent_IdAndAcademicYear(request.studentId(), request.academicYear())) {
-            throw new IllegalArgumentException("A loan account already exists for this student and academic year.");
+            throw new LoanAccountConflictException("A loan account already exists for this student and academic year.");
         }
         validateBalance(request.principalAmount(), request.outstandingBalance());
         LoanAccount loan = new LoanAccount();
@@ -36,20 +40,30 @@ public class LoanAccountService {
         loan.setOutstandingBalance(request.outstandingBalance());
         loan.setDisbursementDate(request.disbursementDate());
         loan.setLoanStatus(request.loanStatus());
-        return loanRepository.save(loan);
+        loan.setMonthlyInstallment(request.monthlyInstallment());
+        LocalDate graduationDate = student.getGraduationDate();
+        if (graduationDate != null) {
+            loan.setRepaymentStartDate(graduationDate.plusMonths(6));
+        }
+        // A temporary unique value satisfies the non-null constraint until the generated ID
+        // can be used to create a stable, human-readable payment reference.
+        loan.setPaymentReference("TMP-" + UUID.randomUUID());
+        LoanAccount saved = loanRepository.saveAndFlush(loan);
+        saved.setPaymentReference(String.format(Locale.ROOT, "SLC-%05d", saved.getId()));
+        return loanRepository.save(saved);
     }
 
     public List<LoanAccount> findByStudent(Long studentId) {
         if (!studentRepository.existsById(studentId)) throw new NoSuchElementException("Student not found with ID: " + studentId);
-        return loanRepository.findAllByStudent_Id(studentId);
+        return loanRepository.findAllByStudent_IdOrderByAcademicYearDesc(studentId);
     }
 
     public List<LoanAccount> findMine(String email) {
-        return loanRepository.findAllByStudent_User_EmailIgnoreCase(email);
+        return loanRepository.findAllByStudent_User_EmailIgnoreCaseOrderByAcademicYearDesc(email);
     }
 
     public LoanAccount findById(Long id) {
-        return loanRepository.findById(id).orElseThrow(() -> new NoSuchElementException("Loan account not found with ID: " + id));
+        return loanRepository.findWithStudentById(id).orElseThrow(() -> new NoSuchElementException("Loan account not found with ID: " + id));
     }
 
     public LoanAccount findByIdForOwner(Long id, String email) {
@@ -67,16 +81,31 @@ public class LoanAccountService {
         if (request.principalAmount() != null) loan.setPrincipalAmount(request.principalAmount());
         if (request.outstandingBalance() != null) loan.setOutstandingBalance(request.outstandingBalance());
         if (request.disbursementDate() != null) loan.setDisbursementDate(request.disbursementDate());
+        if (request.repaymentStartDate() != null) loan.setRepaymentStartDate(request.repaymentStartDate());
+        if (request.monthlyInstallment() != null) loan.setMonthlyInstallment(request.monthlyInstallment());
         if (request.loanStatus() != null) loan.setLoanStatus(request.loanStatus());
+        if (request.academicYear() == null
+                && request.principalAmount() == null
+                && request.outstandingBalance() == null
+                && request.disbursementDate() == null
+                && request.repaymentStartDate() == null
+                && request.monthlyInstallment() == null
+                && request.loanStatus() == null) {
+            throw new IllegalArgumentException("At least one loan field is required.");
+        }
         validateBalance(loan.getPrincipalAmount(), loan.getOutstandingBalance());
         if (loanRepository.existsByStudent_IdAndAcademicYearAndIdNot(
                 loan.getStudent().getId(), loan.getAcademicYear(), loan.getId())) {
-            throw new IllegalArgumentException("A loan account already exists for this student and academic year.");
+            throw new LoanAccountConflictException("A loan account already exists for this student and academic year.");
         }
         return loanRepository.save(loan);
     }
 
-    private void validateBalance(java.math.BigDecimal principal, java.math.BigDecimal balance) {
+    private void validateBalance(BigDecimal principal, BigDecimal balance) {
         if (balance.compareTo(principal) > 0) throw new IllegalArgumentException("Outstanding balance cannot exceed principal amount.");
+    }
+
+    public static class LoanAccountConflictException extends RuntimeException {
+        public LoanAccountConflictException(String message) { super(message); }
     }
 }

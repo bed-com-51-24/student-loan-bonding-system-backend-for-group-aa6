@@ -15,7 +15,7 @@ public class LoanAccount {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.EAGER, optional = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "student_id", nullable = false)
     private Student student;
 
@@ -31,8 +31,18 @@ public class LoanAccount {
     @Column(name = "disbursement_date")
     private LocalDate disbursementDate;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "loan_status", nullable = false, length = 30)
-    private String loanStatus = "ACTIVE";
+    private LoanStatus loanStatus = LoanStatus.ACTIVE;
+
+    @Column(name = "payment_reference", nullable = false, unique = true, length = 30)
+    private String paymentReference;
+
+    @Column(name = "repayment_start_date")
+    private LocalDate repaymentStartDate;
+
+    @Column(name = "monthly_installment", precision = 14, scale = 2)
+    private BigDecimal monthlyInstallment;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -59,8 +69,14 @@ public class LoanAccount {
     public void setOutstandingBalance(BigDecimal outstandingBalance) { this.outstandingBalance = outstandingBalance; }
     public LocalDate getDisbursementDate() { return disbursementDate; }
     public void setDisbursementDate(LocalDate disbursementDate) { this.disbursementDate = disbursementDate; }
-    public String getLoanStatus() { return loanStatus; }
-    public void setLoanStatus(String loanStatus) { this.loanStatus = loanStatus; }
+    public LoanStatus getLoanStatus() { return loanStatus; }
+    public void setLoanStatus(LoanStatus loanStatus) { this.loanStatus = loanStatus; }
+    public String getPaymentReference() { return paymentReference; }
+    public void setPaymentReference(String paymentReference) { this.paymentReference = paymentReference; }
+    public LocalDate getRepaymentStartDate() { return repaymentStartDate; }
+    public void setRepaymentStartDate(LocalDate repaymentStartDate) { this.repaymentStartDate = repaymentStartDate; }
+    public BigDecimal getMonthlyInstallment() { return monthlyInstallment; }
+    public void setMonthlyInstallment(BigDecimal monthlyInstallment) { this.monthlyInstallment = monthlyInstallment; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

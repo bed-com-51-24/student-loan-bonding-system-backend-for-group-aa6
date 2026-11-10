@@ -6,6 +6,7 @@ import mw.loancompliance.loan.dto.CreateLoanAccountRequest;
 import mw.loancompliance.loan.dto.LoanAccountResponse;
 import mw.loancompliance.loan.dto.UpdateLoanAccountRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -71,4 +72,16 @@ public class LoanAccountController {
     @ExceptionHandler(LoanAccountAccessDeniedException.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public Map<String, String> forbidden(LoanAccountAccessDeniedException exception) { return Map.of("error", exception.getMessage()); }
+
+    @ExceptionHandler(LoanAccountService.LoanAccountConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, String> conflict(LoanAccountService.LoanAccountConflictException exception) {
+        return Map.of("error", exception.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, String> constraintConflict(DataIntegrityViolationException exception) {
+        return Map.of("error", "The loan account conflicts with an existing record.");
+    }
 }
