@@ -2,16 +2,18 @@ package mw.loancompliance.student;
 
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
-import java.util.List;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import mw.loancompliance.student.dto.CreateStudentRequest;
 import mw.loancompliance.student.dto.StudentResponse;
 import mw.loancompliance.student.dto.UpdateStudentRequest;
-import org.springframework.http.HttpStatus;
+import mw.loancompliance.student.dto.UpdateOwnStudentRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+
 
 @RestController
 @RequestMapping("/api/students")
@@ -25,6 +27,7 @@ public class StudentController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
     @ResponseStatus(HttpStatus.CREATED)
     public StudentResponse createStudent(
             @Valid @RequestBody CreateStudentRequest request) {
@@ -35,7 +38,9 @@ public class StudentController {
                 request.studentNumber(),
                 request.university(),
                 request.program(),
-                request.graduationDate()
+                request.graduationDate(),
+                request.studyStatus(),
+                request.studyStatusDate()
         );
 
         return StudentResponse.from(student);
@@ -43,34 +48,31 @@ public class StudentController {
 
     @GetMapping("/me")
     @PreAuthorize("hasRole('STUDENT')")
-    public StudentResponse getMyProfile(Authentication authentication) {
+    public StudentResponse getMyStudentProfile(Authentication authentication) {
         return StudentResponse.from(
-                studentService.getStudentByEmail(authentication.getName())
-        );
-    }
-
-    @GetMapping
-    public List<StudentResponse> getAllStudents() {
-        return studentService.getAllStudents()
-                .stream()
-                .map(StudentResponse::from)
-                .toList();
+                studentService.getStudentByUserEmail(authentication.getName()));
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
     public StudentResponse getStudentById(@PathVariable Long id) {
         return StudentResponse.from(studentService.getStudentById(id));
     }
 
-    @GetMapping("/number/{studentNumber}")
-    public StudentResponse getStudentByNumber(
-            @PathVariable String studentNumber) {
-
-        return StudentResponse.from(
-                studentService.getStudentByNumber(studentNumber));
+    @PatchMapping("/me")
+    @PreAuthorize("hasRole('STUDENT')")
+    public StudentResponse updateMyStudentProfile(
+            Authentication authentication,
+            @Valid @RequestBody UpdateOwnStudentRequest request) {
+        Student student = studentService.updateOwnStudent(
+                authentication.getName(),
+                request.university(),
+                request.program());
+        return StudentResponse.from(student);
     }
 
-    @PutMapping("/{id}")
+    @PatchMapping("/{id}")
+    @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
     public StudentResponse updateStudent(
             @PathVariable Long id,
             @Valid @RequestBody UpdateStudentRequest request) {
@@ -80,29 +82,25 @@ public class StudentController {
                 request.studentNumber(),
                 request.university(),
                 request.program(),
-                request.graduationDate()
+                request.graduationDate(),
+                request.studyStatus(),
+                request.studyStatusDate()
         );
 
         return StudentResponse.from(student);
     }
 
-    @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteStudent(@PathVariable Long id) {
-        studentService.deleteStudent(id);
-    }
-
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Map<String, String> handleIllegalArgument(
+    public java.util.Map<String, String> handleIllegalArgument(
             IllegalArgumentException exception) {
-        return Map.of("error", exception.getMessage());
+        return java.util.Map.of("error", exception.getMessage());
     }
 
     @ExceptionHandler(NoSuchElementException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
-    public Map<String, String> handleNotFound(
+    public java.util.Map<String, String> handleNotFound(
             NoSuchElementException exception) {
-        return Map.of("error", exception.getMessage());
+        return java.util.Map.of("error", exception.getMessage());
     }
 }

@@ -1,13 +1,13 @@
 package mw.loancompliance.student.dto;
 
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
+import mw.loancompliance.student.StudyStatus;
 
 public record CreateStudentRequest(
-
         @NotBlank
         @Size(max = 150)
         String fullName,
@@ -29,6 +29,10 @@ public record CreateStudentRequest(
         @Size(max = 200)
         String program,
 
-        LocalDate graduationDate
+        LocalDate graduationDate,
+
+        StudyStatus studyStatus,
+
+        LocalDate studyStatusDate
 ) {
 }

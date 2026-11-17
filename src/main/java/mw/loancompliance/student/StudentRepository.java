@@ -6,12 +6,15 @@ import java.util.Optional;
 
 public interface StudentRepository extends JpaRepository<Student, Long> {
 
-    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = "user")
-    Optional<Student> findByUser_EmailIgnoreCase(String email);
-
     Optional<Student> findByStudentNumber(String studentNumber);
 
+    Optional<Student> findByRepaymentIdentifierIgnoreCase(String repaymentIdentifier);
+
+    Optional<Student> findByUser_EmailIgnoreCase(String email);
+
     boolean existsByStudentNumber(String studentNumber);
+
+    boolean existsByRepaymentIdentifier(String repaymentIdentifier);
 
     boolean existsByUser_Id(Long userId);
 }
