@@ -39,16 +39,17 @@ public class StudentService {
     public Student createStudent(
             String fullName,
             String email,
-            String studentNumber,
+            String nationalId,
             String university,
             String program,
             java.time.LocalDate graduationDate,
             StudyStatus studyStatus,
             java.time.LocalDate studyStatusDate) {
 
-        if (studentRepository.existsByStudentNumber(studentNumber)) {
+        String normalizedNationalId = normalizeNationalId(nationalId);
+        if (studentRepository.existsByNationalIdIgnoreCase(normalizedNationalId)) {
             throw new IllegalArgumentException(
-                    "Student number already exists: " + studentNumber);
+                    "National ID already exists: " + nationalId);
         }
 
         var userResponse = userService.createPendingUser(
@@ -68,7 +69,7 @@ public class StudentService {
 
         Student student = new Student();
         student.setUser(user);
-        student.setStudentNumber(studentNumber);
+        student.setNationalId(normalizedNationalId);
         student.setUniversity(university);
         student.setProgram(program);
         student.setGraduationDate(graduationDate);
@@ -99,11 +100,11 @@ public class StudentService {
     }
 
     @Transactional(readOnly = true)
-    public Student getStudentByNumber(String studentNumber) {
-        return studentRepository.findByStudentNumber(studentNumber)
+    public Student getStudentByNationalId(String nationalId) {
+        return studentRepository.findByNationalId(nationalId)
                 .orElseThrow(() ->
                         new NoSuchElementException(
-                                "Student not found with number: " + studentNumber));
+                                "Student not found with National ID"));
     }
 
     @Transactional(readOnly = true)
@@ -121,7 +122,7 @@ public class StudentService {
     @Transactional
     public Student updateStudent(
             Long id,
-            String studentNumber,
+            String nationalId,
             String university,
             String program,
             java.time.LocalDate graduationDate,
@@ -130,16 +131,17 @@ public class StudentService {
 
         Student student = getStudentById(id);
 
-        if (studentNumber != null) {
-            if (studentNumber.isBlank()) {
-                throw new IllegalArgumentException("Student number must not be blank");
+        if (nationalId != null) {
+            if (nationalId.isBlank()) {
+                throw new IllegalArgumentException("National ID must not be blank");
             }
-            if (!student.getStudentNumber().equals(studentNumber)
-                    && studentRepository.existsByStudentNumber(studentNumber)) {
+            String normalizedNationalId = normalizeNationalId(nationalId);
+            if (!student.getNationalId().equalsIgnoreCase(normalizedNationalId)
+                    && studentRepository.existsByNationalIdIgnoreCase(normalizedNationalId)) {
                 throw new IllegalArgumentException(
-                        "Student number already exists: " + studentNumber);
+                        "National ID already exists");
             }
-            student.setStudentNumber(studentNumber);
+            student.setNationalId(normalizedNationalId);
         }
         if (university != null) {
             if (university.isBlank()) {
@@ -162,7 +164,7 @@ public class StudentService {
         } else if (graduationDate != null) {
             syncLoanRepaymentStartDates(student);
         }
-        if (studentNumber == null && university == null && program == null
+        if (nationalId == null && university == null && program == null
                 && graduationDate == null && studyStatus == null && studyStatusDate == null) {
             throw new IllegalArgumentException("At least one profile field is required");
         }
@@ -225,6 +227,13 @@ public class StudentService {
         if (status == StudyStatus.GRADUATED) {
             student.setGraduationDate(effectiveDate);
         }
+    }
+
+    private String normalizeNationalId(String nationalId) {
+        if (nationalId == null || nationalId.isBlank()) {
+            throw new IllegalArgumentException("National ID must not be blank");
+        }
+        return nationalId.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     private void syncLoanRepaymentStartDates(Student student) {

@@ -35,7 +35,7 @@ public class StudentController {
         Student student = studentService.createStudent(
                 request.fullName(),
                 request.email(),
-                request.studentNumber(),
+                request.nationalId(),
                 request.university(),
                 request.program(),
                 request.graduationDate(),
@@ -79,7 +79,7 @@ public class StudentController {
 
         Student student = studentService.updateStudent(
                 id,
-                request.studentNumber(),
+                request.nationalId(),
                 request.university(),
                 request.program(),
                 request.graduationDate(),

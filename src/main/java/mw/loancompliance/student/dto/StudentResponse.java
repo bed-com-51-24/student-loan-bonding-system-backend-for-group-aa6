@@ -9,7 +9,7 @@ import mw.loancompliance.student.StudyStatus;
 public record StudentResponse(
         Long id,
         Long userId,
-        String studentNumber,
+        String nationalId,
         String repaymentIdentifier,
         String university,
         String program,
@@ -24,7 +24,7 @@ public record StudentResponse(
         return new StudentResponse(
                 student.getId(),
                 student.getUser().getId(),
-                student.getStudentNumber(),
+                student.getNationalId(),
                 student.getRepaymentIdentifier(),
                 student.getUniversity(),
                 student.getProgram(),

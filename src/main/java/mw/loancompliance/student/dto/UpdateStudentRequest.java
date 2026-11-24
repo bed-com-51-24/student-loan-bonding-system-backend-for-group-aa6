@@ -8,7 +8,7 @@ import mw.loancompliance.student.StudyStatus;
 public record UpdateStudentRequest(
 
         @Size(max = 50)
-        String studentNumber,
+        String nationalId,
 
         @Size(max = 200)
         String university,

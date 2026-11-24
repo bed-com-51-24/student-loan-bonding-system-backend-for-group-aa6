@@ -18,8 +18,8 @@ public class Student {
     @JoinColumn(name = "user_id", nullable = false, unique = true)
     private User user;
 
-    @Column(name = "student_number", nullable = false, unique = true, length = 50)
-    private String studentNumber;
+    @Column(name = "national_id", nullable = false, unique = true, length = 50)
+    private String nationalId;
 
     @Column(name = "repayment_identifier", nullable = false, length = 5)
     private String repaymentIdentifier;
@@ -76,8 +76,8 @@ public class Student {
         this.user = user;
     }
 
-    public String getStudentNumber() {
-        return studentNumber;
+    public String getNationalId() {
+        return nationalId;
     }
 
     public String getRepaymentIdentifier() {
@@ -88,8 +88,8 @@ public class Student {
         this.repaymentIdentifier = repaymentIdentifier;
     }
 
-    public void setStudentNumber(String studentNumber) {
-        this.studentNumber = studentNumber;
+    public void setNationalId(String nationalId) {
+        this.nationalId = nationalId;
     }
 
     public String getUniversity() {

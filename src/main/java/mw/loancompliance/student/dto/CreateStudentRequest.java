@@ -19,7 +19,7 @@ public record CreateStudentRequest(
 
         @NotBlank
         @Size(max = 50)
-        String studentNumber,
+        String nationalId,
 
         @NotBlank
         @Size(max = 200)
