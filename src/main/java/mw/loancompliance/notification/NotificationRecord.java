@@ -44,6 +44,11 @@ import java.time.Instant;
         return createdAt;
     }
     public void markRead() {
-        readAt=Instant.now();
+        readAt = Instant.now();
     }
+
+    public void markUnread() {
+        readAt = null;
+    }
+
 }
