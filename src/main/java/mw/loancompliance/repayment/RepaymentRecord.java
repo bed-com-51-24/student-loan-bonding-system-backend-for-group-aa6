@@ -51,6 +51,7 @@ public class RepaymentRecord {
     public Long getStudentId() { return studentId; }
     public BigDecimal getAmount() { return amount; }
     public Instant getPaymentDate() { return paymentDate; }
+    public String getPaymentMethod() { return paymentMethod; }
     public String getStatus() { return status; }
     public Long getLoanAccountId() { return loanAccountId; }
     public void reverse(Long actor, String reason) {

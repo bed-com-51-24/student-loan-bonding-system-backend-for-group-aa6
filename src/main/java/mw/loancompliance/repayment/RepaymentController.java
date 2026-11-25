@@ -19,6 +19,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 
@@ -26,6 +29,8 @@ import java.util.Locale;
 @RequestMapping("/api")
 @SecurityRequirement(name = "bearerAuth")
 public class RepaymentController {
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Africa/Blantyre");
+
     private final RepaymentService service;
 
     @Value("${app.payment.bank-name:}")
@@ -44,7 +49,8 @@ public class RepaymentController {
     public record MinimumPaymentResponse(BigDecimal minimumMonthlyPayment, String currency) { }
     public record InAppPaymentRequest(@NotNull @Positive @Digits(integer = 12, fraction = 2)
             BigDecimal amount,
-            @NotBlank @Pattern(regexp = "PAYCHANGU|AIRTEL_MONEY|TNM_MPAMBA") String paymentMethod) { }
+            @NotBlank @Pattern(regexp = "PAYCHANGU|AIRTEL_MONEY|TNM_MPAMBA") String paymentMethod,
+            @Positive Long employmentRecordId) { }
 
     @GetMapping("/payment-instructions")
     @PreAuthorize("hasRole('STUDENT')")
@@ -57,8 +63,13 @@ public class RepaymentController {
     @GetMapping("/repayments")
     @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN', 'STUDENT')")
     public PageResponse<RepaymentRecord> repayments(
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) @Positive Long repaymentId,
             @RequestParam(required = false) @Positive Long studentId,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String paymentMethod,
+            @RequestParam(required = false) LocalDate dateFrom,
+            @RequestParam(required = false) LocalDate dateTo,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             Authentication authentication) {
@@ -67,38 +78,75 @@ public class RepaymentController {
                 .anyMatch("ROLE_LOAN_BOARD_ADMIN"::equals);
         List<RepaymentRecord> records;
         if (admin) {
+            if (scope != null && !"ALL".equalsIgnoreCase(scope)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Loan Board administrators may use scope=ALL or omit scope");
+            }
             records = service.repayments();
             if (studentId != null) {
                 records = records.stream()
                         .filter(record -> studentId.equals(record.getStudentId())).toList();
             }
         } else {
+            if (!"SELF".equalsIgnoreCase(scope)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Students must use scope=SELF");
+            }
             if (studentId != null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Students cannot select a studentId; their account determines the scope");
             }
             records = service.ownRepayments(authentication.getName());
         }
+        if (dateFrom != null && dateTo != null && dateFrom.isAfter(dateTo)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "dateFrom must be on or before dateTo");
+        }
+        if (repaymentId != null) {
+            records = records.stream().filter(record -> repaymentId.equals(record.getId())).toList();
+            if (records.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Repayment not found");
+            }
+        }
         if (status != null && !status.isBlank()) {
             records = records.stream()
                     .filter(record -> status.equalsIgnoreCase(record.getStatus())).toList();
+        }
+        if (paymentMethod != null && !paymentMethod.isBlank()) {
+            records = records.stream()
+                    .filter(record -> paymentMethod.equalsIgnoreCase(record.getPaymentMethod())).toList();
+        }
+        if (dateFrom != null) {
+            var from = dateFrom.atStartOfDay(BUSINESS_ZONE).toInstant();
+            records = records.stream().filter(record -> !record.getPaymentDate().isBefore(from)).toList();
+        }
+        if (dateTo != null) {
+            var until = dateTo.plus(1, ChronoUnit.DAYS).atStartOfDay(BUSINESS_ZONE).toInstant();
+            records = records.stream().filter(record -> record.getPaymentDate().isBefore(until)).toList();
         }
         return PageResponse.from(records, page, size);
     }
 
     @PostMapping("/repayments")
-    @PreAuthorize("hasRole('STUDENT')")
-    public StudentRepaymentResponse postMyRepayment(Authentication authentication,
+    @PreAuthorize("hasAnyRole('STUDENT', 'EMPLOYER_ADMIN')")
+    public StudentRepaymentResponse postRepayment(Authentication authentication,
             @Valid @RequestBody InAppPaymentRequest request) {
-        return service.postOwnRepayment(authentication.getName(), request.amount(), request.paymentMethod());
-    }
-
-    @PostMapping("/employment-records/{employmentRecordId}/repayments")
-    @PreAuthorize("hasRole('EMPLOYER_ADMIN')")
-    public StudentRepaymentResponse postEmployeeRepayment(Authentication authentication,
-            @PathVariable @Positive Long employmentRecordId,
-            @Valid @RequestBody InAppPaymentRequest request) {
-        return service.postEmployerRepayment(authentication.getName(), employmentRecordId,
+        boolean student = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch("ROLE_STUDENT"::equals);
+        if (student) {
+            if (request.employmentRecordId() != null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Students must not provide employmentRecordId");
+            }
+            return service.postOwnRepayment(authentication.getName(),
+                    request.amount(), request.paymentMethod());
+        }
+        if (request.employmentRecordId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Employer admins must provide employmentRecordId");
+        }
+        return service.postEmployerRepayment(authentication.getName(), request.employmentRecordId(),
                 request.amount(), request.paymentMethod());
     }
 
