@@ -6,12 +6,14 @@ import java.util.NoSuchElementException;
 import mw.loancompliance.student.dto.CreateStudentRequest;
 import mw.loancompliance.student.dto.StudentResponse;
 import mw.loancompliance.student.dto.UpdateStudentRequest;
+import mw.loancompliance.student.dto.UpdateOwnStudentRequest;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/students")
@@ -25,62 +27,67 @@ public class StudentController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
     @ResponseStatus(HttpStatus.CREATED)
     public StudentResponse createStudent(
             @Valid @RequestBody CreateStudentRequest request) {
 
         Student student = studentService.createStudent(
-                request.userId(),
-                request.studentNumber(),
+                request.fullName(),
+                request.email(),
+                request.nationalId(),
                 request.university(),
                 request.program(),
-                request.graduationDate()
+                request.graduationDate(),
+                request.studyStatus(),
+                request.studyStatusDate()
         );
 
         return StudentResponse.from(student);
     }
 
-    @GetMapping
-    public List<StudentResponse> getAllStudents() {
-        return studentService.getAllStudents()
-                .stream()
-                .map(StudentResponse::from)
-                .toList();
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('STUDENT')")
+    public StudentResponse getMyStudentProfile(Authentication authentication) {
+        return StudentResponse.from(
+                studentService.getStudentByUserEmail(authentication.getName()));
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
     public StudentResponse getStudentById(@PathVariable Long id) {
         return StudentResponse.from(studentService.getStudentById(id));
     }
 
-    @GetMapping("/number/{studentNumber}")
-    public StudentResponse getStudentByNumber(
-            @PathVariable String studentNumber) {
-
-        return StudentResponse.from(
-                studentService.getStudentByNumber(studentNumber));
+    @PatchMapping("/me")
+    @PreAuthorize("hasRole('STUDENT')")
+    public StudentResponse updateMyStudentProfile(
+            Authentication authentication,
+            @Valid @RequestBody UpdateOwnStudentRequest request) {
+        Student student = studentService.updateOwnStudent(
+                authentication.getName(),
+                request.university(),
+                request.program());
+        return StudentResponse.from(student);
     }
 
-    @PutMapping("/{id}")
+    @PatchMapping("/{id}")
+    @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
     public StudentResponse updateStudent(
             @PathVariable Long id,
             @Valid @RequestBody UpdateStudentRequest request) {
 
         Student student = studentService.updateStudent(
                 id,
-                request.studentNumber(),
+                request.nationalId(),
                 request.university(),
                 request.program(),
-                request.graduationDate()
+                request.graduationDate(),
+                request.studyStatus(),
+                request.studyStatusDate()
         );
 
         return StudentResponse.from(student);
-    }
-
-    @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteStudent(@PathVariable Long id) {
-        studentService.deleteStudent(id);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

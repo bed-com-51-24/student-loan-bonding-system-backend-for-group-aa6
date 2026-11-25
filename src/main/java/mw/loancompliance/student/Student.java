@@ -18,8 +18,11 @@ public class Student {
     @JoinColumn(name = "user_id", nullable = false, unique = true)
     private User user;
 
-    @Column(name = "student_number", nullable = false, unique = true, length = 50)
-    private String studentNumber;
+    @Column(name = "national_id", nullable = false, unique = true, length = 50)
+    private String nationalId;
+
+    @Column(name = "repayment_identifier", nullable = false, length = 5)
+    private String repaymentIdentifier;
 
     @Column(nullable = false, length = 200)
     private String university;
@@ -29,6 +32,16 @@ public class Student {
 
     @Column(name = "graduation_date")
     private LocalDate graduationDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "study_status", nullable = false, length = 20)
+    private StudyStatus studyStatus = StudyStatus.ENROLLED;
+
+    @Column(name = "study_status_date")
+    private LocalDate studyStatusDate;
+
+    @Column(name = "last_notified_compliance_status", length = 40)
+    private String lastNotifiedComplianceStatus;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -63,12 +76,20 @@ public class Student {
         this.user = user;
     }
 
-    public String getStudentNumber() {
-        return studentNumber;
+    public String getNationalId() {
+        return nationalId;
     }
 
-    public void setStudentNumber(String studentNumber) {
-        this.studentNumber = studentNumber;
+    public String getRepaymentIdentifier() {
+        return repaymentIdentifier;
+    }
+
+    public void setRepaymentIdentifier(String repaymentIdentifier) {
+        this.repaymentIdentifier = repaymentIdentifier;
+    }
+
+    public void setNationalId(String nationalId) {
+        this.nationalId = nationalId;
     }
 
     public String getUniversity() {
@@ -93,6 +114,41 @@ public class Student {
 
     public void setGraduationDate(LocalDate graduationDate) {
         this.graduationDate = graduationDate;
+    }
+
+    public StudyStatus getStudyStatus() {
+        return studyStatus;
+    }
+
+    public void setStudyStatus(StudyStatus studyStatus) {
+        this.studyStatus = studyStatus;
+    }
+
+    public LocalDate getStudyStatusDate() {
+        return studyStatusDate;
+    }
+
+    public void setStudyStatusDate(LocalDate studyStatusDate) {
+        this.studyStatusDate = studyStatusDate;
+    }
+
+    public String getLastNotifiedComplianceStatus() {
+        return lastNotifiedComplianceStatus;
+    }
+
+    public void setLastNotifiedComplianceStatus(String lastNotifiedComplianceStatus) {
+        this.lastNotifiedComplianceStatus = lastNotifiedComplianceStatus;
+    }
+
+    public LocalDate calculateRepaymentStartDate() {
+        return switch (studyStatus) {
+            case WITHDRAWN, EXPELLED -> studyStatusDate;
+            case GRADUATED -> {
+                LocalDate completedOn = studyStatusDate != null ? studyStatusDate : graduationDate;
+                yield completedOn == null ? null : completedOn.plusYears(2);
+            }
+            case ENROLLED -> graduationDate == null ? null : graduationDate.plusYears(2);
+        };
     }
 
     public Instant getCreatedAt() {
