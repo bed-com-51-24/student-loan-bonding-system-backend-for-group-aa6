@@ -2,6 +2,7 @@ package mw.loancompliance.loan;
 
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import mw.loancompliance.common.PageResponse;
 import mw.loancompliance.loan.dto.CreateLoanAccountRequest;
@@ -34,29 +35,45 @@ public class LoanAccountController {
     @GetMapping
     @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN', 'STUDENT')")
     public PageResponse<LoanAccountResponse> getLoanAccounts(
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) @Positive Long loanId,
             @RequestParam(required = false) @Positive Long studentId,
+            @RequestParam(required = false) LoanStatus status,
+            @RequestParam(required = false) @Min(1900) Integer academicYear,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             Authentication authentication) {
         boolean loanBoardAdmin = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .anyMatch("ROLE_LOAN_BOARD_ADMIN"::equals);
-        return PageResponse.from(loanAccountService
-                        .getLoanAccounts(authentication.getName(), loanBoardAdmin, studentId).stream()
-                        .map(LoanAccountResponse::from)
-                        .toList(), page, size);
-    }
+        if (page < 0 || size < 1 || size > 100) {
+            throw new IllegalArgumentException("page must be non-negative and size must be between 1 and 100");
+        }
 
-    @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN', 'STUDENT')")
-    public LoanAccountResponse getLoanAccount(
-            @PathVariable @Positive Long id,
-            Authentication authentication) {
-        boolean loanBoardAdmin = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch("ROLE_LOAN_BOARD_ADMIN"::equals);
-        return LoanAccountResponse.from(loanAccountService.getLoanAccount(
-                id, authentication.getName(), loanBoardAdmin));
+        if (!loanBoardAdmin) {
+            if (!"SELF".equalsIgnoreCase(scope)) {
+                throw new IllegalArgumentException("Students must use scope=SELF");
+            }
+            if (studentId != null || loanId != null) {
+                throw new IllegalArgumentException("Students cannot filter loan records by loanId or studentId");
+            }
+        } else if (scope != null && !"ALL".equalsIgnoreCase(scope)) {
+            throw new IllegalArgumentException("Loan Board administrators may use scope=ALL or omit scope");
+        }
+
+        var accounts = loanAccountService
+                .getLoanAccounts(authentication.getName(), loanBoardAdmin, studentId).stream()
+                .filter(account -> loanId == null || account.getId().equals(loanId))
+                .filter(account -> status == null || account.getLoanStatus() == status)
+                .filter(account -> academicYear == null || account.getAcademicYear().equals(academicYear))
+                .map(LoanAccountResponse::from)
+                .toList();
+
+        if (loanId != null && accounts.isEmpty()) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "Loan record not found with ID: " + loanId);
+        }
+        return PageResponse.from(accounts, page, size);
     }
 
     @PatchMapping("/{id}")
