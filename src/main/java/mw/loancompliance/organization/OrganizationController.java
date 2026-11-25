@@ -14,6 +14,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/organizations")
@@ -37,33 +40,28 @@ public class OrganizationController {
     }
 
     @GetMapping
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN', 'EMPLOYER_ADMIN')")
     public PageResponse<OrganizationResponse> getOrganizations(
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) @Positive Long organizationId,
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             Authentication authentication) {
         boolean loanBoardAdmin = hasRole(authentication, "ROLE_LOAN_BOARD_ADMIN");
-        return PageResponse.from(organizationService
-                        .getOrganizations(active, loanBoardAdmin).stream()
+        if (loanBoardAdmin && scope != null && !"ALL".equalsIgnoreCase(scope)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Loan Board administrators may use scope=ALL or omit scope");
+        }
+        List<Organization> organizations = loanBoardAdmin
+                ? organizationService.getOrganizations(active, true).stream()
+                    .filter(organization -> organizationId == null
+                            || organizationId.equals(organization.getId()))
+                    .toList()
+                : employerOrganizations(authentication.getName(), scope, organizationId, active);
+        return PageResponse.from(organizations.stream()
                         .map(OrganizationResponse::from)
                         .toList(), page, size);
-    }
-
-    @GetMapping("/me")
-    @PreAuthorize("hasRole('EMPLOYER_ADMIN')")
-    public OrganizationResponse getMyOrganization(Authentication authentication) {
-        return OrganizationResponse.from(
-                organizationService.getMyOrganization(authentication.getName()));
-    }
-
-    @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN', 'EMPLOYER_ADMIN')")
-    public OrganizationResponse getOrganization(
-            @PathVariable @Positive Long id,
-            Authentication authentication) {
-        return OrganizationResponse.from(organizationService.getOrganization(
-                id, authentication.getName(), hasRole(authentication, "ROLE_LOAN_BOARD_ADMIN")));
     }
 
     @PatchMapping("/{id}")
@@ -90,6 +88,20 @@ public class OrganizationController {
         return authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .anyMatch(role::equals);
+    }
+
+    private List<Organization> employerOrganizations(
+            String email, String scope, Long organizationId, Boolean active) {
+        if (!"SELF".equalsIgnoreCase(scope)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Employer admins must use scope=SELF");
+        }
+        if (organizationId != null || active != null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Employer admins cannot filter organizations; their assigned organization is used");
+        }
+        return List.of(organizationService.getMyOrganization(email));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
