@@ -16,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
 
 import java.util.List;
 import java.util.Locale;
@@ -28,14 +30,17 @@ public class UserService {
     private final UserRepository userRepository;
     private final AuthService authService;
     private final Validator validator;
+    private final PasswordEncoder passwordEncoder;
 
     public UserService(
             UserRepository userRepository,
             AuthService authService,
-            Validator validator) {
+            Validator validator,
+            PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.authService = authService;
         this.validator = validator;
+        this.passwordEncoder = passwordEncoder;
     }
 
     // Retrieve all users.
@@ -92,6 +97,35 @@ public class UserService {
         authService.sendActivationEmail(savedUser);
 
         return toUserResponse(savedUser);
+    }
+
+    /** Playground onboarding for employer admins: no email activation is needed. */
+    @Transactional
+    public UserResponse createActiveEmployerAdmin(
+            CreatePendingUserCommand command,
+            Long organizationId,
+            String rawPassword) {
+        validateCreatePendingUserCommand(command);
+        validateOnboardingAssignment(UserRole.EMPLOYER_ADMIN, organizationId);
+        if (rawPassword == null || rawPassword.length() < 8 || rawPassword.length() > 72) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Password must be between 8 and 72 characters");
+        }
+
+        String email = command.email().trim().toLowerCase(Locale.ROOT);
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "A user with this email already exists");
+        }
+
+        User user = new User();
+        user.setFullName(command.fullName().trim());
+        user.setEmail(email);
+        user.setRole(UserRole.EMPLOYER_ADMIN.name());
+        user.setAccountStatus(UserAccountStatus.ACTIVE.name());
+        user.setOrganizationId(organizationId);
+        user.setPasswordHash(passwordEncoder.encode(rawPassword));
+        return toUserResponse(userRepository.save(user));
     }
 
     // Change account status without exposing password or other secret fields.
