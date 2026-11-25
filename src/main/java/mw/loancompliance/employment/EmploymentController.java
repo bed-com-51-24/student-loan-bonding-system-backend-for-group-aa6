@@ -1,64 +1,121 @@
 package mw.loancompliance.employment;
+
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
-import mw.loancompliance.organization.OrganizationService;
+import jakarta.validation.constraints.Positive;
+import mw.loancompliance.common.PageResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.time.LocalDate;
 import java.util.List;
-@RestController @RequestMapping("/api/employment-records") @SecurityRequirement(name = "bearerAuth")
+
+@RestController
+@RequestMapping("/api")
+@SecurityRequirement(name = "bearerAuth")
 public class EmploymentController {
     private final EmploymentService service;
-    private final OrganizationService orgs;
-    public EmploymentController(EmploymentService s,OrganizationService o) {
-        service=s;
-        orgs=o;
+
+    public EmploymentController(EmploymentService service) {
+        this.service = service;
     }
-    public record CreateEmploymentRequest(@NotBlank String employmentType,@NotBlank String employmentCategory,Long organizationId,String employerName,String jobTitle,@NotNull LocalDate startDate) {
-    }
-    public record Decision(String verificationNote,String reason,String reviewStatus,String reviewNote) {
-    }
-    public record EndDate(@NotNull LocalDate endDate) {
-    }
-    public record Update(String jobTitle,LocalDate startDate) {
-    }
-    public record View(Long id,Long studentId,String studentName,Long organizationId,String organizationName,String employmentType,String employmentCategory,String employerName,String jobTitle,LocalDate startDate,LocalDate endDate,String status,String verificationNote) {
-        static View from(EmploymentRecord r) {
-            return new View(r.getId(),r.getStudent().getId(),r.getStudent().getUser().getFullName(),r.getOrganization()==null?null:r.getOrganization().getId(),r.getOrganization()==null?null:r.getOrganization().getLegalName(),r.getEmploymentType(),r.getEmploymentCategory(),r.getEmployerName(),r.getJobTitle(),r.getStartDate(),r.getEndDate(),r.getStatus(),r.getVerificationNote());
+
+    public record AddEmployeeRequest(@NotBlank String nationalId, @NotBlank String employeeName,
+            String jobTitle, @NotNull LocalDate startDate) { }
+    public record EndDateRequest(@NotNull LocalDate endDate) { }
+    public record EmployeeView(Long id, Long studentId, String employeeName,
+            boolean loanBeneficiary, Long organizationId, String organizationName,
+            String jobTitle, LocalDate startDate, LocalDate endDate, String status) {
+        static EmployeeView from(EmploymentRecord record) {
+            return new EmployeeView(record.getId(),
+                    record.getStudent() == null ? null : record.getStudent().getId(),
+                    record.getEmployeeName(), record.getStudent() != null,
+                    record.getOrganization() == null ? null : record.getOrganization().getId(),
+                    record.getOrganization() == null ? null : record.getOrganization().getLegalName(),
+                    record.getJobTitle(), record.getStartDate(), record.getEndDate(), record.getStatus());
         }
     }
-    @PostMapping @PreAuthorize("hasRole('STUDENT')") public View submit(@RequestBody @jakarta.validation.Valid CreateEmploymentRequest q,Authentication a) {
-        return View.from(service.submit(a.getName(),q.employmentType(),q.employmentCategory(),q.organizationId(),q.employerName(),q.jobTitle(),q.startDate()));
+    public record EmployeeRosterResponse(long loanBeneficiaryCount, long otherEmployeeCount,
+            PageResponse<EmployeeView> employees) { }
+
+    @PostMapping("/organizations/me/employees")
+    @PreAuthorize("hasRole('EMPLOYER_ADMIN')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public EmployeeView addEmployee(@Valid @RequestBody AddEmployeeRequest request,
+            Authentication authentication) {
+        return EmployeeView.from(service.addEmployee(authentication.getName(),
+                request.nationalId(), request.employeeName(), request.jobTitle(), request.startDate()));
     }
-    @GetMapping("/me") @PreAuthorize("hasRole('STUDENT')") public List<View> own(Authentication a) {
-        return service.own(a.getName()).stream().map(View::from).toList();
+
+    @GetMapping("/employment-records")
+    @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN', 'EMPLOYER_ADMIN', 'STUDENT')")
+    public EmployeeRosterResponse listEmploymentRecords(
+            @RequestParam(required = false) @Positive Long organizationId,
+            @RequestParam(required = false) @Positive Long studentId,
+            @RequestParam(required = false) Boolean active,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        boolean admin = hasRole(authentication, "ROLE_LOAN_BOARD_ADMIN");
+        boolean employerAdmin = hasRole(authentication, "ROLE_EMPLOYER_ADMIN");
+        List<EmploymentRecord> records;
+        if (admin) {
+            records = service.all();
+            if (organizationId != null) {
+                records = records.stream().filter(record -> record.getOrganization() != null
+                        && organizationId.equals(record.getOrganization().getId())).toList();
+            }
+            if (studentId != null) {
+                records = records.stream().filter(record -> record.getStudent() != null
+                        && studentId.equals(record.getStudent().getId())).toList();
+            }
+            if (active != null) {
+                records = records.stream().filter(record -> isActive(record) == active).toList();
+            }
+        } else {
+            if (organizationId != null || studentId != null || active != null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Only Loan Board administrators may filter employment records");
+            }
+            records = employerAdmin
+                    ? service.employerEmployees(authentication.getName()).employees()
+                    : service.own(authentication.getName());
+        }
+
+        long matched = records.stream().filter(record -> record.getStudent() != null).count();
+        List<EmployeeView> views = records.stream().map(EmployeeView::from).toList();
+        return new EmployeeRosterResponse(matched, records.size() - matched,
+                PageResponse.from(views, page, size));
     }
-    @GetMapping @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')") public List<View> all() {
-        return service.all().stream().map(View::from).toList();
+
+    @GetMapping("/employment-records/{id}")
+    @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN','EMPLOYER_ADMIN')")
+    public EmployeeView get(@PathVariable @Positive Long id, Authentication authentication) {
+        return EmployeeView.from(service.get(id, authentication.getName(),
+                hasRole(authentication, "ROLE_LOAN_BOARD_ADMIN")));
     }
-    @GetMapping("/{id}") @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN','EMPLOYER_ADMIN')") public View get(@PathVariable Long id,Authentication a) {
-        boolean admin=a.getAuthorities().stream().anyMatch(x->x.getAuthority().equals("ROLE_LOAN_BOARD_ADMIN"));
-        return View.from(service.get(id,a.getName(),admin));
+
+    @PatchMapping("/employment-records/{id}")
+    @PreAuthorize("hasRole('EMPLOYER_ADMIN')")
+    public EmployeeView update(@PathVariable @Positive Long id,
+            @Valid @RequestBody EndDateRequest request,
+            Authentication authentication) {
+        return EmployeeView.from(service.end(id, authentication.getName(), request.endDate()));
     }
-    @GetMapping("/employer/pending") @PreAuthorize("hasRole('EMPLOYER_ADMIN')") public List<View> pending(Authentication a) {
-        return service.pending(a.getName()).stream().map(View::from).toList();
+
+    private boolean isActive(EmploymentRecord record) {
+        return record.getEndDate() == null && "VERIFIED".equals(record.getStatus());
     }
-    @PatchMapping("/{id}/verify") @PreAuthorize("hasRole('EMPLOYER_ADMIN')") public View verify(@PathVariable Long id,@RequestBody Decision d,Authentication a) {
-        return View.from(service.decide(id,a.getName(),false,"VERIFIED",d.verificationNote()));
-    }
-    @PatchMapping("/{id}/reject") @PreAuthorize("hasRole('EMPLOYER_ADMIN')") public View reject(@PathVariable Long id,@RequestBody Decision d,Authentication a) {
-        return View.from(service.decide(id,a.getName(),false,"REJECTED",d.reason()));
-    }
-    @PatchMapping("/{id}/review") @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')") public View review(@PathVariable Long id,@RequestBody Decision d) {
-        return View.from(service.decide(id,"",true,d.reviewStatus(),d.reviewNote()));
-    }
-    @PatchMapping("/{id}") @PreAuthorize("hasRole('STUDENT')") public View update(@PathVariable Long id,@RequestBody Update d,Authentication a) {
-        return View.from(service.updateOwn(id,a.getName(),d.jobTitle(),d.startDate()));
-    }
-    @PatchMapping("/{id}/end-date") @PreAuthorize("hasAnyRole('STUDENT','EMPLOYER_ADMIN')") public View end(@PathVariable Long id,@RequestBody @jakarta.validation.Valid EndDate d,Authentication a) {
-        boolean emp=a.getAuthorities().stream().anyMatch(x->x.getAuthority().equals("ROLE_EMPLOYER_ADMIN"));
-        return View.from(service.end(id,a.getName(),emp,d.endDate()));
+
+    private boolean hasRole(Authentication authentication, String role) {
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role::equals);
     }
 }
