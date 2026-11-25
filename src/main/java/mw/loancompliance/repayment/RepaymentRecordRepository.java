@@ -5,5 +5,8 @@ public interface RepaymentRecordRepository extends JpaRepository<RepaymentRecord
     List<RepaymentRecord> findAllByOrderByPaymentDateDesc();
     List<RepaymentRecord> findAllByStudentIdOrderByPaymentDateDesc(Long id);
     List<RepaymentRecord> findAllByLoanAccountId(Long loanAccountId);
+    List<RepaymentRecord> findAllByLoanAccountIdAndStatusOrderByPaymentDateAsc(
+            Long loanAccountId, String status);
+    boolean existsByLoanAccountIdAndStatus(Long loanAccountId, String status);
     Optional<RepaymentRecord> findByIdAndStudentId(Long id,Long studentId);
 }
