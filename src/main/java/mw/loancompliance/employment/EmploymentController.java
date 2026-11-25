@@ -58,6 +58,7 @@ public class EmploymentController {
     public EmployeeRosterResponse listEmploymentRecords(
             @RequestParam(required = false) @Positive Long organizationId,
             @RequestParam(required = false) @Positive Long studentId,
+            @RequestParam(required = false) @Positive Long recordId,
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -78,8 +79,11 @@ public class EmploymentController {
             if (active != null) {
                 records = records.stream().filter(record -> isActive(record) == active).toList();
             }
+            if (recordId != null) {
+                records = records.stream().filter(record -> recordId.equals(record.getId())).toList();
+            }
         } else {
-            if (organizationId != null || studentId != null || active != null) {
+            if (organizationId != null || studentId != null || recordId != null || active != null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Only Loan Board administrators may filter employment records");
             }
@@ -92,13 +96,6 @@ public class EmploymentController {
         List<EmployeeView> views = records.stream().map(EmployeeView::from).toList();
         return new EmployeeRosterResponse(matched, records.size() - matched,
                 PageResponse.from(views, page, size));
-    }
-
-    @GetMapping("/employment-records/{id}")
-    @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN','EMPLOYER_ADMIN')")
-    public EmployeeView get(@PathVariable @Positive Long id, Authentication authentication) {
-        return EmployeeView.from(service.get(id, authentication.getName(),
-                hasRole(authentication, "ROLE_LOAN_BOARD_ADMIN")));
     }
 
     @PatchMapping("/employment-records/{id}")
