@@ -1,6 +1,6 @@
 spring:
   application:
-    name: loan-compliance-system
+    name: loan-playground
 
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:loan_compliance}
@@ -52,10 +52,6 @@ app:
   jwt:
     secret: ${JWT_SECRET}
     expiration-ms: ${JWT_EXPIRATION_MS:900000}
-
-  bootstrap-admin:
-    email: ${ADMIN_EMAIL:}
-    password: ${ADMIN_PASSWORD:}
 
   frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
   mail-from: ${MAIL_FROM:no-reply@example.com}
