@@ -1,98 +1,181 @@
 package mw.loancompliance.employment;
+
+import mw.loancompliance.common.BusinessEvent;
+import mw.loancompliance.common.BusinessEventPublisher;
+import mw.loancompliance.organization.Organization;
 import mw.loancompliance.organization.OrganizationRepository;
+import mw.loancompliance.student.Student;
 import mw.loancompliance.student.StudentRepository;
 import mw.loancompliance.user.repository.UserRepository;
-import mw.loancompliance.audit.AuditService;
-import mw.loancompliance.notification.NotificationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+
 import java.time.LocalDate;
 import java.util.List;
-@Service @Transactional
+
+@Service
+@Transactional
 public class EmploymentService {
     private final EmploymentRecordRepository records;
     private final StudentRepository students;
     private final OrganizationRepository organizations;
     private final UserRepository users;
-    private final AuditService audit;
-    private final NotificationService notifications;
-    public EmploymentService(EmploymentRecordRepository r,StudentRepository s,OrganizationRepository o,UserRepository u,AuditService a,NotificationService n) {
-        records=r;
-        students=s;
-        organizations=o;
-        users=u;
-        audit=a;
-        notifications=n;
+    private final BusinessEventPublisher events;
+
+    public EmploymentService(EmploymentRecordRepository records, StudentRepository students,
+            OrganizationRepository organizations, UserRepository users,
+            BusinessEventPublisher events) {
+        this.records = records;
+        this.students = students;
+        this.organizations = organizations;
+        this.users = users;
+        this.events = events;
     }
-    public EmploymentRecord submit(String email,String type,String category,Long organizationId,String employer,String title,LocalDate start) {
-        if(type==null||category==null||start==null) throw bad("Employment type, category and start date are required");
-        boolean self="SELF_EMPLOYED".equals(category), unregistered="UNREGISTERED_EMPLOYER".equals(category);
-        if(self && organizationId!=null || unregistered && (organizationId!=null||employer==null||employer.isBlank()) || !self&&!unregistered&&organizationId==null) throw bad("Provide a registered organization, self-employment declaration, or unregistered employer details");
-        var student=students.findByUser_EmailIgnoreCase(email).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"Student profile not found"));
-        var record=new EmploymentRecord();
+
+    public EmploymentRecord addEmployee(String email, String nationalId, String employeeName,
+            String jobTitle, LocalDate startDate) {
+        if (nationalId == null || nationalId.isBlank() || employeeName == null
+                || employeeName.isBlank() || startDate == null) {
+            throw bad("National ID, employee name, and employment start date are required");
+        }
+        if (startDate.isAfter(LocalDate.now())) {
+            throw bad("Employment start date cannot be in the future");
+        }
+
+        var employerAdmin = users.findByEmailIgnoreCase(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        Long organizationId = employerAdmin.getOrganizationId();
+        if (organizationId == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No organization is assigned");
+        }
+        Organization organization = organizations.findById(organizationId)
+                .filter(Organization::isActive)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Assigned organization is unavailable"));
+
+        String normalizedId = nationalId.trim().toUpperCase(java.util.Locale.ROOT);
+        if (records.existsByOrganization_IdAndNationalIdAndEndDateIsNull(organizationId, normalizedId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This employee already has an active record for your organization");
+        }
+
+        Student student = students.findByNationalIdIgnoreCase(normalizedId).orElse(null);
+        if (student != null && records.findFirstByStudent_IdAndStatusAndEndDateIsNull(
+                student.getId(), "VERIFIED").isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This student already has an active employment record");
+        }
+
+        EmploymentRecord record = new EmploymentRecord();
         record.setStudent(student);
-        record.setEmploymentType(type);
-        record.setEmploymentCategory(category);
-        record.setEmployerName(employer);
-        record.setJobTitle(title);
-        record.setStartDate(start);
-        if(organizationId!=null) record.setOrganization(organizations.findById(organizationId).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"Organization not found")));
-        record.setStatus(self?"VERIFIED":unregistered?"REQUIRES_REVIEW":"PENDING_VERIFICATION");
-        var saved=records.save(record);
-        audit.record(email,"EMPLOYMENT_SUBMITTED","EMPLOYMENT_RECORD",saved.getId(),"Student submitted employment information");
-        if(saved.getOrganization()!=null)users.findAll().stream().filter(u->"EMPLOYER_ADMIN".equals(u.getRole())&&saved.getOrganization().getId().equals(u.getOrganizationId())).forEach(u->notifications.inApp(u,"EMPLOYMENT_SUBMITTED","Employment verification requested","A student submitted employment information for your organization."));
+        record.setOrganization(organization);
+        record.setEmployeeName(employeeName.trim());
+        record.setNationalId(normalizedId);
+        record.setEmploymentType("OTHER");
+        record.setEmploymentCategory(student == null ? "NON_LOAN_EMPLOYEE" : "EMPLOYED");
+        record.setEmployerName(organization.getLegalName());
+        record.setJobTitle(jobTitle == null || jobTitle.isBlank() ? null : jobTitle.trim());
+        record.setStartDate(startDate);
+        record.setStatus("VERIFIED");
+        EmploymentRecord saved = records.save(record);
+
+        boolean matchedStudent = student != null;
+        events.publish(new BusinessEvent(email,
+                matchedStudent ? "EMPLOYMENT_STARTED" : "NON_LOAN_EMPLOYEE_ADDED",
+                "EMPLOYMENT_RECORD", saved.getId(),
+                matchedStudent
+                        ? "Employer recorded employment for student " + student.getId()
+                        : "Employer added an employee not matched to a student-loan record",
+                matchedStudent ? student.getUser().getId() : null,
+                matchedStudent ? "Employment recorded" : null,
+                matchedStudent ? organization.getLegalName()
+                        + " recorded you as an employee starting " + startDate : null));
         return saved;
     }
-    @Transactional(readOnly=true) public List<EmploymentRecord> own(String email) {
+
+    @Transactional(readOnly = true)
+    public List<EmploymentRecord> own(String email) {
         return records.findAllByStudent_User_EmailIgnoreCaseOrderByStartDateDesc(email);
     }
-    @Transactional(readOnly=true) public List<EmploymentRecord> all() {
-        return records.findAllByOrderByStartDateDesc();
+
+    @Transactional(readOnly = true)
+    public List<EmploymentRecord> all() {
+        return records.findAllForLoanBeneficiaries();
     }
-    @Transactional(readOnly=true) public EmploymentRecord get(Long id,String email,boolean admin) {
-        var r=find(id);
-        if(!admin&&(r.getOrganization()==null||!users.findByEmailIgnoreCase(email).map(u->r.getOrganization().getId().equals(u.getOrganizationId())).orElse(false)))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Record belongs to another organization");
-        return r;
+
+    @Transactional(readOnly = true)
+    public EmployeeRoster employerEmployees(String email) {
+        Long organizationId = users.findByEmailIgnoreCase(email)
+                .map(user -> user.getOrganizationId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        if (organizationId == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No organization is assigned");
+        }
+        List<EmploymentRecord> active = records
+                .findAllByOrganization_IdAndEndDateIsNullOrderByStartDateDesc(organizationId);
+        long matched = active.stream().filter(record -> record.getStudent() != null).count();
+        return new EmployeeRoster(active, matched, active.size() - matched);
     }
-    @Transactional(readOnly=true) public List<EmploymentRecord> pending(String email) {
-        var u=users.findByEmailIgnoreCase(email).orElseThrow();
-        if(u.getOrganizationId()==null) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"No organization assigned");
-        return records.findAllByOrganization_IdAndStatusOrderByStartDateAsc(u.getOrganizationId(),"PENDING_VERIFICATION");
+
+    public record EmployeeRoster(List<EmploymentRecord> employees,
+            long loanBeneficiaryCount, long otherEmployeeCount) { }
+
+    @Transactional(readOnly = true)
+    public EmploymentRecord get(Long id, String email, boolean admin) {
+        EmploymentRecord record = find(id);
+        if (admin && record.getStudent() == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Loan beneficiary employment record not found");
+        }
+        if (!admin && (record.getOrganization() == null
+                || !isEmployerForOrganization(email, record.getOrganization().getId()))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Record belongs to another organization");
+        }
+        return record;
     }
-    public EmploymentRecord decide(Long id,String email,boolean admin,String status,String note) {
-        var r=find(id);
-        if(!admin && (r.getOrganization()==null||!organizations.findById(r.getOrganization().getId()).map(o->users.findByEmailIgnoreCase(email).map(u->r.getOrganization().getId().equals(u.getOrganizationId())).orElse(false)).orElse(false))) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Record belongs to another organization");
-        if(!List.of("VERIFIED","REJECTED","REQUIRES_REVIEW").contains(status))throw bad("Invalid employment review status");
-        if(!"PENDING_VERIFICATION".equals(r.getStatus())&& !"REQUIRES_REVIEW".equals(r.getStatus())) throw bad("Employment record is already decided");
-        r.setStatus(status);
-        r.setVerificationNote(note);
-        audit.record(email,"EMPLOYMENT_"+status,"EMPLOYMENT_RECORD",id,"Employment verification decision: "+status);
-        notifications.inApp(r.getStudent().getUser(),"EMPLOYMENT_"+status,"Employment status updated","Your employment record was reviewed: "+status);
-        return r;
+
+    public EmploymentRecord end(Long id, String email, LocalDate date) {
+        EmploymentRecord record = find(id);
+        if (record.getOrganization() == null
+                || !isEmployerForOrganization(email, record.getOrganization().getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Record belongs to another organization");
+        }
+        if (record.getEndDate() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Employment record has already ended");
+        }
+        if (date == null || date.isBefore(record.getStartDate()) || date.isAfter(LocalDate.now())) {
+            throw bad("End date must be on or after the start date and not in the future");
+        }
+        record.setEndDate(date);
+        record.setStatus("ENDED");
+        Student student = record.getStudent();
+        events.publish(new BusinessEvent(email, "EMPLOYMENT_ENDED", "EMPLOYMENT_RECORD",
+                record.getId(), "Employer ended employment record " + record.getId(),
+                student == null ? null : student.getUser().getId(),
+                student == null ? null : "Employment ended",
+                student == null ? null : "Your employment with "
+                        + record.getOrganization().getLegalName() + " ended on " + date));
+        return record;
     }
-    public EmploymentRecord updateOwn(Long id,String email,String title,LocalDate start) {
-        var r=records.findByIdAndStudent_User_EmailIgnoreCase(id,email).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"Employment record not found"));
-        if(title!=null)r.setJobTitle(title);
-        if(start!=null)r.setStartDate(start);
-        if(title==null&&start==null)throw bad("At least one field is required");
-        if(r.getOrganization()!=null)r.setStatus("PENDING_VERIFICATION");
-        return r;
-    }
-    public EmploymentRecord end(Long id,String email,boolean employer,LocalDate date) {
-        var r=find(id);
-        if(date==null||date.isBefore(r.getStartDate()))throw bad("End date must not precede start date");
-        if(!employer&&!r.getStudent().getUser().getEmail().equalsIgnoreCase(email))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Not your employment record");
-        if(employer&&(r.getOrganization()==null||!users.findByEmailIgnoreCase(email).map(u->r.getOrganization().getId().equals(u.getOrganizationId())).orElse(false)))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Record belongs to another organization");
-        r.setEndDate(date);
-        r.setStatus("ENDED");
-        return r;
-    }
+
     private EmploymentRecord find(Long id) {
-        return records.findById(id).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"Employment record not found"));
+        return records.findById(id).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Employment record not found"));
     }
-    private ResponseStatusException bad(String m) {
-        return new ResponseStatusException(HttpStatus.BAD_REQUEST,m);
+
+    private boolean isEmployerForOrganization(String email, Long organizationId) {
+        return users.findByEmailIgnoreCase(email)
+                .map(user -> "EMPLOYER_ADMIN".equals(user.getRole())
+                        && organizationId.equals(user.getOrganizationId()))
+                .orElse(false);
+    }
+
+    private ResponseStatusException bad(String message) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
 }

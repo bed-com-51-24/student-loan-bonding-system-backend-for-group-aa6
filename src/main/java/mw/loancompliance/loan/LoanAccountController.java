@@ -2,86 +2,74 @@ package mw.loancompliance.loan;
 
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
+import mw.loancompliance.common.PageResponse;
 import mw.loancompliance.loan.dto.CreateLoanAccountRequest;
 import mw.loancompliance.loan.dto.LoanAccountResponse;
 import mw.loancompliance.loan.dto.UpdateLoanAccountRequest;
 import org.springframework.http.HttpStatus;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
-
 @RestController
-@RequestMapping("/api/loan-accounts")
+@RequestMapping("/api/loan-records")
 @SecurityRequirement(name = "bearerAuth")
 public class LoanAccountController {
-    private final LoanAccountService loanService;
 
-    public LoanAccountController(LoanAccountService loanService) { this.loanService = loanService; }
+    private final LoanAccountService loanAccountService;
+
+    public LoanAccountController(LoanAccountService loanAccountService) {
+        this.loanAccountService = loanAccountService;
+    }
 
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
-    public LoanAccountResponse create(@Valid @RequestBody CreateLoanAccountRequest request) {
-        return LoanAccountResponse.from(loanService.create(request));
+    @ResponseStatus(HttpStatus.CREATED)
+    public LoanAccountResponse createLoanAccount(@Valid @RequestBody CreateLoanAccountRequest request) {
+        return LoanAccountResponse.from(loanAccountService.createLoanAccount(request));
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
-    public List<LoanAccountResponse> findByStudent(@RequestParam Long studentId) {
-        return loanService.findByStudent(studentId).stream().map(LoanAccountResponse::from).toList();
-    }
-
-    @GetMapping("/me")
-    @PreAuthorize("hasRole('STUDENT')")
-    public List<LoanAccountResponse> findMine(Authentication authentication) {
-        return loanService.findMine(authentication.getName()).stream().map(LoanAccountResponse::from).toList();
+    @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN', 'STUDENT')")
+    public PageResponse<LoanAccountResponse> getLoanAccounts(
+            @RequestParam(required = false) @Positive Long studentId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        boolean loanBoardAdmin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch("ROLE_LOAN_BOARD_ADMIN"::equals);
+        return PageResponse.from(loanAccountService
+                        .getLoanAccounts(authentication.getName(), loanBoardAdmin, studentId).stream()
+                        .map(LoanAccountResponse::from)
+                        .toList(), page, size);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN', 'STUDENT')")
-    public LoanAccountResponse findById(@PathVariable Long id, Authentication authentication) {
-        LoanAccount loan = isLoanBoardAdmin(authentication)
-                ? loanService.findById(id)
-                : loanService.findByIdForOwner(id, authentication.getName());
-        return LoanAccountResponse.from(loan);
+    public LoanAccountResponse getLoanAccount(
+            @PathVariable @Positive Long id,
+            Authentication authentication) {
+        boolean loanBoardAdmin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch("ROLE_LOAN_BOARD_ADMIN"::equals);
+        return LoanAccountResponse.from(loanAccountService.getLoanAccount(
+                id, authentication.getName(), loanBoardAdmin));
     }
 
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
-    public LoanAccountResponse update(@PathVariable Long id, @Valid @RequestBody UpdateLoanAccountRequest request) {
-        return LoanAccountResponse.from(loanService.update(id, request));
-    }
-
-    private boolean isLoanBoardAdmin(Authentication authentication) {
-        return authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_LOAN_BOARD_ADMIN"));
+    public LoanAccountResponse updateLoanAccount(
+            @PathVariable @Positive Long id,
+            @Valid @RequestBody UpdateLoanAccountRequest request) {
+        return LoanAccountResponse.from(loanAccountService.updateLoanAccount(id, request));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Map<String, String> badRequest(IllegalArgumentException exception) { return Map.of("error", exception.getMessage()); }
-
-    @ExceptionHandler(NoSuchElementException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public Map<String, String> notFound(NoSuchElementException exception) { return Map.of("error", exception.getMessage()); }
-
-    @ExceptionHandler(LoanAccountAccessDeniedException.class)
-    @ResponseStatus(HttpStatus.FORBIDDEN)
-    public Map<String, String> forbidden(LoanAccountAccessDeniedException exception) { return Map.of("error", exception.getMessage()); }
-
-    @ExceptionHandler(LoanAccountService.LoanAccountConflictException.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
-    public Map<String, String> conflict(LoanAccountService.LoanAccountConflictException exception) {
-        return Map.of("error", exception.getMessage());
-    }
-
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
-    public Map<String, String> constraintConflict(DataIntegrityViolationException exception) {
-        return Map.of("error", "The loan account conflicts with an existing record.");
+    public java.util.Map<String, String> handleIllegalArgument(IllegalArgumentException exception) {
+        return java.util.Map.of("error", exception.getMessage());
     }
 }
