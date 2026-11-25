@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Size;
 
 public record CreateOrganizationAdminRequest(
         @NotBlank @Size(max = 150) String fullName,
-        @NotBlank @Email @Size(max = 255) String email
+        @NotBlank @Email @Size(max = 255) String email,
+        @NotBlank @Size(min = 8, max = 72) String password
 ) {
 }
