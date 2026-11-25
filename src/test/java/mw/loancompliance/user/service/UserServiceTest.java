@@ -13,6 +13,7 @@ import mw.loancompliance.user.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -31,6 +32,7 @@ class UserServiceTest {
 
     private UserRepository userRepository;
     private AuthService authService;
+    private PasswordEncoder passwordEncoder;
     private ValidatorFactory validatorFactory;
     private UserService userService;
 
@@ -38,9 +40,10 @@ class UserServiceTest {
     void setUp() {
         userRepository = mock(UserRepository.class);
         authService = mock(AuthService.class);
+        passwordEncoder = mock(PasswordEncoder.class);
         validatorFactory = Validation.buildDefaultValidatorFactory();
         Validator validator = validatorFactory.getValidator();
-        userService = new UserService(userRepository, authService, validator);
+        userService = new UserService(userRepository, authService, validator, passwordEncoder);
     }
 
     @AfterEach
