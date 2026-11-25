@@ -1,10 +1,13 @@
 package mw.loancompliance.compliance;
 
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import jakarta.validation.constraints.Positive;
+import mw.loancompliance.common.PageResponse;
 import mw.loancompliance.notification.NotificationService;
 import mw.loancompliance.employment.EmploymentRecordRepository;
 import mw.loancompliance.loan.LoanAccount;
 import mw.loancompliance.loan.LoanAccountRepository;
+import mw.loancompliance.loan.LoanAccountService;
 import mw.loancompliance.repayment.RepaymentRecord;
 import mw.loancompliance.repayment.RepaymentRecordRepository;
 import mw.loancompliance.student.Student;
@@ -12,11 +15,13 @@ import mw.loancompliance.student.StudentRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -38,6 +43,7 @@ public class ComplianceController {
 
     private final StudentRepository students;
     private final LoanAccountRepository loans;
+    private final LoanAccountService loanAccountService;
     private final EmploymentRecordRepository employment;
     private final RepaymentRecordRepository repayments;
     private final NotificationService notifications;
@@ -45,11 +51,13 @@ public class ComplianceController {
     public ComplianceController(
             StudentRepository students,
             LoanAccountRepository loans,
+            LoanAccountService loanAccountService,
             EmploymentRecordRepository employment,
             RepaymentRecordRepository repayments,
             NotificationService notifications) {
         this.students = students;
         this.loans = loans;
+        this.loanAccountService = loanAccountService;
         this.employment = employment;
         this.repayments = repayments;
         this.notifications = notifications;
@@ -60,6 +68,8 @@ public class ComplianceController {
             String studentName,
             String employmentStatus,
             String employmentVerification,
+            String employerName,
+            LocalDate employmentStartDate,
             BigDecimal originalLoanAmount,
             BigDecimal totalRepaid,
             BigDecimal outstandingBalance,
@@ -71,7 +81,7 @@ public class ComplianceController {
             long totalStudents,
             long employedStudents,
             long selfEmployedStudents,
-            long employmentUnderReview,
+            long otherEmployees,
             BigDecimal totalOutstandingBalance,
             BigDecimal totalRepaid,
             String complianceStatusNote) {
@@ -80,12 +90,14 @@ public class ComplianceController {
     @GetMapping("/dashboard")
     @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
     public Dashboard dashboard() {
+        loanAccountService.refreshAllLoanBalances();
         var allStudents = students.findAll();
         var allEmployment = employment.findAll();
         var allLoans = loans.findAll();
         var allRepayments = repayments.findAllByOrderByPaymentDateDesc();
         Set<Long> currentlyEmployedStudentIds = allEmployment.stream()
                 .filter(this::isCurrentlyEmployed)
+                .filter(record -> record.getStudent() != null)
                 .map(record -> record.getStudent().getId())
                 .collect(Collectors.toSet());
 
@@ -94,8 +106,8 @@ public class ComplianceController {
                 currentlyEmployedStudentIds.size(),
                 Math.max(0, allStudents.size() - currentlyEmployedStudentIds.size()),
                 allEmployment.stream()
-                        .filter(record -> "REQUIRES_REVIEW".equals(record.getStatus())
-                                || "PENDING_VERIFICATION".equals(record.getStatus()))
+                        .filter(record -> record.getStudent() == null
+                                && isActiveEmployment(record))
                         .count(),
                 allLoans.stream().map(LoanAccount::getOutstandingBalance)
                         .reduce(BigDecimal.ZERO, BigDecimal::add),
@@ -105,30 +117,38 @@ public class ComplianceController {
     }
 
     @GetMapping("/students")
-    @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
-    public List<StudentCompliance> all() {
-        return students.findAll().stream().map(student -> view(student.getId())).toList();
-    }
-
-    @GetMapping("/students/{studentId}")
-    @PreAuthorize("hasRole('LOAN_BOARD_ADMIN')")
-    public StudentCompliance one(@PathVariable Long studentId) {
-        return view(studentId);
-    }
-
-    @GetMapping("/me")
-    @PreAuthorize("hasRole('STUDENT')")
-    public StudentCompliance me(Authentication authentication) {
-        Student student = students.findByUser_EmailIgnoreCase(authentication.getName())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Student profile not found"));
-        return view(student.getId());
+    @PreAuthorize("hasAnyRole('LOAN_BOARD_ADMIN', 'STUDENT')")
+    public PageResponse<StudentCompliance> students(
+            @RequestParam(required = false) @Positive Long studentId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        boolean admin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch("ROLE_LOAN_BOARD_ADMIN"::equals);
+        List<StudentCompliance> results;
+        if (admin) {
+            results = studentId == null
+                    ? students.findAll().stream().map(student -> view(student.getId())).toList()
+                    : List.of(view(studentId));
+        } else {
+            if (studentId != null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Students cannot select a studentId; their account determines the scope");
+            }
+            Student student = students.findByUser_EmailIgnoreCase(authentication.getName())
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND, "Student profile not found"));
+            results = List.of(view(student.getId()));
+        }
+        return PageResponse.from(results, page, size);
     }
 
     private StudentCompliance view(Long studentId) {
         Student student = students.findById(studentId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Student not found"));
+        loanAccountService.refreshStudentLoans(studentId);
         List<LoanAccount> studentLoans = loans.findAllByStudent_IdOrderByAcademicYearDesc(studentId);
         var employmentRecords = employment.findAllByStudent_User_EmailIgnoreCaseOrderByStartDateDesc(
                 student.getUser().getEmail());
@@ -156,6 +176,8 @@ public class ComplianceController {
                 student.getUser().getFullName(),
                 verifiedEmployment == null ? "SELF_EMPLOYED" : verifiedEmployment.getEmploymentCategory(),
                 latestEmployment == null ? "NOT_SUBMITTED" : latestEmployment.getStatus(),
+                verifiedEmployment == null ? null : verifiedEmployment.getOrganization().getLegalName(),
+                verifiedEmployment == null ? null : verifiedEmployment.getStartDate(),
                 principal,
                 repaid,
                 result.outstandingBalance(),
@@ -187,14 +209,6 @@ public class ComplianceController {
         for (LoanAccount loan : studentLoans) {
             if (loan.getOutstandingBalance().signum() == 0) {
                 continue;
-            }
-            List<RepaymentRecord> loanPayments = repayments.findAllByLoanAccountId(loan.getId());
-            BigDecimal loanRepaid = loanPayments.stream().filter(this::isConfirmed)
-                    .map(RepaymentRecord::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            if (loanRepaid.compareTo(loan.getPrincipalAmount()) > 0) {
-                return new ComplianceResult("REVIEW_REQUIRED", outstandingBalance,
-                        "Confirmed repayments exceed the loan principal.");
             }
             if (loan.getRepaymentStartDate() == null) {
                 return new ComplianceResult("REVIEW_REQUIRED", outstandingBalance,
@@ -253,7 +267,11 @@ public class ComplianceController {
 
     private boolean isCurrentlyEmployed(mw.loancompliance.employment.EmploymentRecord record) {
         return "EMPLOYED".equals(record.getEmploymentCategory())
-                && "VERIFIED".equals(record.getStatus());
+                && isActiveEmployment(record);
+    }
+
+    private boolean isActiveEmployment(mw.loancompliance.employment.EmploymentRecord record) {
+        return "VERIFIED".equals(record.getStatus()) && record.getEndDate() == null;
     }
 
     @EventListener(ApplicationReadyEvent.class)
